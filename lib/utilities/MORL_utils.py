@@ -325,10 +325,62 @@ def generate_w_batch_test(args, step_size):
     
     return w_batch_test
 
-def plot_objs(args,objs,ext=''):
-    non_dom = NonDominatedSorting().do(-objs, only_non_dominated_front=True)        
-    objs_plot = objs[non_dom]
-    plt.plot(objs_plot[:,0],objs_plot[:,1],'rs', markersize=2)
+# def plot_objs(args,objs,ext=''):
+#     non_dom = NonDominatedSorting().do(-objs, only_non_dominated_front=True)        
+#     objs_plot = objs[non_dom]
+#     plt.plot(objs_plot[:,0],objs_plot[:,1],'rs', markersize=2)
+#     plt.xlabel("Speed")
+#     plt.ylabel("Energy Efficiency")
+#     plt.title('{} - Pareto Front'.format(args.scenario_name))
+#     if args.scenario_name == "MO-Walker2d-v2":
+#         plt.ylim(0, 2700)
+#         plt.xlim(0, 2700)
+#     elif args.scenario_name == "MO-HalfCheetah-v2":
+#         plt.ylim(0, 2700)
+#         plt.xlim(0, 2700)
+#     elif args.scenario_name == "MO-Ant-v2":
+#         plt.ylim(0, 3700)
+#         plt.xlim(0, 3400)
+#     elif args.scenario_name == "MO-Swimmer-v2":
+#         plt.ylim(0, 300)
+#         plt.xlim(0, 300)
+#     elif args.scenario_name == "MO-Hopper-v2":
+#         plt.ylim(0, 6000)
+#         plt.xlim(0, 5000)
+#     plt.savefig('Figures/{}/{}-ParetoFront, ExpNoise={}, PolicyUpdateFreq={}_{}.png'.format(args.scenario_name,args.plot_name,args.expl_noise,args.policy_freq,ext))
+#     plt.close()
+
+# return sorted indices of nondominated objs
+
+def check_dominated(obj_batch, obj, tolerance=0):
+    return (np.logical_and((obj_batch * (1-tolerance) >= obj).all(axis=1), (obj_batch * (1-tolerance) > obj).any(axis=1))).any()
+
+def undominated_indices(obj_batch_input, tolerance=0):
+    obj_batch = np.array(obj_batch_input)
+    sorted_indices = np.argsort(obj_batch.T[0])
+    indices = []
+    for idx in sorted_indices:
+        if (obj_batch[idx] >= 0).all() and not check_dominated(obj_batch, obj_batch[idx], tolerance):
+            indices.append(idx)
+    return indices
+
+def plot_objs(args, objs, ext=''):
+    #non_dom = NonDominatedSorting().do(-objs, only_non_dominated_front=True)
+    #objs_plot = objs[non_dom]
+    fig = plt.figure(figsize=[7, 7])
+    p_num = np.array(objs)
+
+    indices_wanted = undominated_indices(p_num, tolerance=0.0)
+    edge_colors = ['royalblue' if i in indices_wanted else 'r' for i in range(p_num.shape[0])]
+    face_colors = ['none' for i in range(p_num.shape[0])]
+
+    plt.scatter(
+        p_num[:, 0],
+        p_num[:, 1],
+        facecolors=face_colors,
+        edgecolors=edge_colors,
+    )
+    #plt.plot(objs_plot[:,0],objs_plot[:,1],'rs', markersize=2)
     plt.xlabel("Speed")
     plt.ylabel("Energy Efficiency")
     plt.title('{} - Pareto Front'.format(args.scenario_name))
@@ -340,16 +392,22 @@ def plot_objs(args,objs,ext=''):
         plt.xlim(0, 2700)
     elif args.scenario_name == "MO-Ant-v2":
         plt.ylim(0, 3700)
-        plt.xlim(0, 3400)
+        #plt.xlim(0, 3400)
+        plt.xlim(0, 3700)
     elif args.scenario_name == "MO-Swimmer-v2":
         plt.ylim(0, 300)
         plt.xlim(0, 300)
     elif args.scenario_name == "MO-Hopper-v2":
-        plt.ylim(0, 6000)
-        plt.xlim(0, 5000)
-    plt.savefig('Figures/{}/{}-ParetoFront, ExpNoise={}, PolicyUpdateFreq={}_{}.png'.format(args.scenario_name,args.plot_name,args.expl_noise,args.policy_freq,ext))
+        plt.ylim(0, 6500)
+        plt.xlim(0, 6500)
+        #plt.ylim(0, 6000)
+        #plt.xlim(0, 5000)
+
+    #if not os.path.exists(f"Figures/{args.scenario_name}"):
+    #    os.makedirs(f"Figures/{args.scenario_name}")
+    #plt.savefig(f'Figures/{args.scenario_name}/{args.plot_name}_ParetoFront_ExpNoise{args.expl_noise}_PolicyUpdateFreq{args.policy_freq}_{ext}.png')
     plt.close()
-    
+    return fig
 
 # Evaluate agent druing training 
 def eval_agent(test_env, agent, w_batch, args, eval_episodes=1):

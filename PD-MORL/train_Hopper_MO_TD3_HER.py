@@ -7,9 +7,11 @@ from tensorboardX import SummaryWriter
 from datetime import datetime
 import torch
 import random
+import argparse
 import torch.optim as optim
 import torch.multiprocessing as mp
 import os
+import wandb
 
 sys.path.append('../')
 from tqdm import tqdm
@@ -24,7 +26,7 @@ from scipy.interpolate import RBFInterpolator
 
 from collections import namedtuple, deque
 import copy
-
+import matplotlib.pyplot as plt
 
 Queue_obj = namedtuple('Queue_obj', ['ep_samples', 'time_step','ep_cnt','process_ID'])
 
@@ -55,12 +57,28 @@ def child_process(actor, critic, args, train_queue,p_id,w_batch):
 if __name__ == "__main__":
     mp.set_start_method('spawn')
     os.environ['OMP_NUM_THREADS'] = "1"
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--seed', type=int, default=33333421)
+    parser.add_argument('--debug', action="store_true")
+    my_args = parser.parse_args()
+
+    mode = "disabled" if my_args.debug else None
+    wandb.init(
+        project=f"PDMORL_PYTORCH_MUJOCO",
+        group=f"hopper",
+        #group=f"{benchmark_name}-r{args.reward_shape}",
+        name=str(my_args.seed),
+        mode=mode
+        )
+
     start_time = time.time()
     name = "Hopper_MO_TD3_HER"
     args = lib.utilities.settings.HYPERPARAMS[name]
     args.plot_name  = name
     PROCESSES_COUNT = args.process_count
     torch.set_num_threads(PROCESSES_COUNT)
+    args.seed = my_args.seed
     
     torch.manual_seed(args.seed)
     random.seed(args.seed)
@@ -150,6 +168,7 @@ if __name__ == "__main__":
     process_episode_array = np.zeros((PROCESSES_COUNT,))
     eval_cnt = 1
     eval_cnt_ep = 1
+    training_step = 0
     try:
         for ts in tqdm(range(0, PROCESSES_COUNT*args.time_steps,PROCESSES_COUNT)): #iterate through the fixed number of timesteps
             
@@ -167,6 +186,7 @@ if __name__ == "__main__":
 
             # Learn from the minibatch
             for i in range(PROCESSES_COUNT):
+                training_step += 1
                 batch = replay_buffer_main.sample(args.batch_size) 
                 agent_main.learn(batch, writer)
 
@@ -194,9 +214,13 @@ if __name__ == "__main__":
                 print(f"Time steps of Each Process: {process_step_array}, Episode Count of Each Process: {process_episode_array}")
                 #Store episode results and write to tensorboard
                 lib.utilities.MORL_utils.store_results( [], hypervolume, sparsity, time_step, writer, args)
-                lib.utilities.common_utils.save_model(actor, args, name = name, ext ='actor_{}'.format(time_step))
-                lib.utilities.common_utils.save_model(critic, args, name = name,ext ='critic_{}'.format(time_step))
-                lib.utilities.MORL_utils.plot_objs(args,objs,ext='{}'.format(time_step))
+                #lib.utilities.common_utils.save_model(actor, args, name = name, ext ='actor_{}'.format(time_step))
+                #lib.utilities.common_utils.save_model(critic, args, name = name,ext ='critic_{}'.format(time_step))
+                fig = lib.utilities.MORL_utils.plot_objs(args,objs,ext='{}'.format(time_step))
+                wandb.log({f"evaluation/hv": hypervolume}, step=training_step)
+                wandb.log({f"evaluation/sparsity": sparsity}, step=training_step)
+                wandb.log({f"figure/pareto_front": wandb.Image(fig)}, step=training_step)
+                plt.close()
     finally:
         for p in data_proc_list:
             p.terminate()
@@ -205,8 +229,8 @@ if __name__ == "__main__":
     #Evaluate the final agent
     hypervolume, sparsity, objs = lib.utilities.MORL_utils.eval_agent(test_env_main, agent_main, w_batch_test, args, eval_episodes=args.eval_episodes)
     lib.utilities.MORL_utils.store_results([], hypervolume, sparsity, time_step, writer, args)
-    lib.utilities.common_utils.save_model(actor, args, name = name,ext ='final_actor')
-    lib.utilities.common_utils.save_model(critic, args, name = name,ext ='final_critic')
+    #lib.utilities.common_utils.save_model(actor, args, name = name,ext ='final_actor')
+    #lib.utilities.common_utils.save_model(critic, args, name = name,ext ='final_critic')
     lib.utilities.MORL_utils.plot_objs(args,objs,ext='final')
     print("Done in %d steps and %d episodes!" % (time_step, sum(process_episode_array)))
     print("Time Consumed")
